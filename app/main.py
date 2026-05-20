@@ -17,6 +17,8 @@ from .dependencies import limiter, check_ip_ban, get_db
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 
+import threading
+
 # ─── Database Init ───────────────────────────────────────────
 def init_db():
     retries = 10
@@ -32,14 +34,21 @@ def init_db():
     return False
 
 
-db_ready = init_db()
+def run_db_initialization():
+    print("🔄 Starting database initialization and seeding in background thread...")
+    db_ready = init_db()
+    if db_ready:
+        try:
+            from .seed_v2 import seed_v2
+            seed_v2()
+        except Exception as e:
+            print(f"⚠️ Seeding warning: {e}")
+    else:
+        print("❌ Database initialization failed after retries.")
 
-if db_ready:
-    try:
-        from .seed_v2 import seed_v2
-        seed_v2()
-    except Exception as e:
-        print(f"⚠️ Seeding warning: {e}")
+
+# Run database initialization and seeding in a background thread to prevent blocking Uvicorn startup
+threading.Thread(target=run_db_initialization, daemon=True).start()
 
 
 # ─── App Lifespan ────────────────────────────────────────────
