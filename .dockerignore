@@ -1,0 +1,14 @@
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.env
+.git/
+.gitignore
+*.md
+check.py
+fix_teams.py
+import_data.py
+reimport_clean.py
+dataset/
+backend/
