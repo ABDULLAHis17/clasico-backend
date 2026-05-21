@@ -230,6 +230,42 @@ class LoginSchema(BaseModel):
     password: str
 
 
+class UserProfileUpdateSchema(BaseModel):
+    username: Optional[str] = None
+    phone_number: Optional[str] = None
+    display_name: Optional[str] = None
+    favorite_player: Optional[str] = None
+    favorite_team: Optional[str] = None
+    favorite_national_team: Optional[str] = None
+    favorite_league: Optional[str] = None
+
+
+class UserMeSchema(BaseModel):
+    id: str
+    email: str
+    status: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    avatar_url: Optional[str] = None
+    favorite_teams: int = 0
+    favorite_players: int = 0
+    favorite_leagues: int = 0
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserSearchResultSchema(BaseModel):
+    id: str
+    email: str
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class UserDetailSchema(UserBaseSchema):
     """Extended user view for admin – includes profile, roles, and active ban."""
     roles: List[RoleSchema] = []

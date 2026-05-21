@@ -121,6 +121,8 @@ class User(Base):
 class UserProfile(Base):
     __tablename__ = 'user_profiles'
     user_id = Column(String(50), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    username = Column(String(50), unique=True, nullable=True)
+    phone_number = Column(String(20), nullable=True)
     display_name = Column(String(100))
     avatar_url = Column(Text)
     bio = Column(Text)
@@ -128,6 +130,13 @@ class UserProfile(Base):
     city = Column(String(100))
     birthdate = Column(Date)
     gender = Column(String(20))
+    
+    # Onboarding preferences
+    favorite_player_name = Column(String(200), nullable=True)
+    favorite_team_name = Column(String(200), nullable=True)
+    favorite_national_team_name = Column(String(200), nullable=True)
+    favorite_league_name = Column(String(200), nullable=True)
+
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     

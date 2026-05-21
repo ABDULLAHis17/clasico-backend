@@ -12,7 +12,7 @@ import time
 
 from .database import engine, Base
 from . import models
-from .routers import leagues, matches, news, players, teams, admin, auth, user_feedback, stadiums, coaches, proxy
+from .routers import leagues, matches, news, players, teams, admin, auth, user_feedback, stadiums, coaches, proxy, users
 from .dependencies import limiter, check_ip_ban, get_db
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
@@ -25,6 +25,20 @@ def init_db():
     while retries > 0:
         try:
             Base.metadata.create_all(bind=engine)
+            from sqlalchemy import text
+            with engine.begin() as conn:
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN username VARCHAR(50) UNIQUE;"))
+                except: pass
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN phone_number VARCHAR(20);"))
+                except: pass
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_player_name VARCHAR(200);"))
+                except: pass
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_team_name VARCHAR(200);"))
+                except: pass
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_national_team_name VARCHAR(200);"))
+                except: pass
+                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_league_name VARCHAR(200);"))
+                except: pass
             print("✅ Database tables created successfully!")
             return True
         except Exception as e:
@@ -104,6 +118,7 @@ app.include_router(coaches.router)
 app.include_router(proxy.router)
 app.include_router(user_feedback.router)
 app.include_router(admin.router)
+app.include_router(users.router)
 
 
 # ─── Root ────────────────────────────────────────────────────
