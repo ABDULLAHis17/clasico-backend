@@ -73,6 +73,9 @@ def seed_v2():
     try:
         _ensure_roles_and_admin(db)
 
+        # Always try to seed news (function is idempotent)
+        _seed_news(db)
+
         real_player_count = db.query(Player).filter(
             Player.photo_url.like('http%')
         ).count()
@@ -81,7 +84,7 @@ def seed_v2():
         ).count()
 
         if real_team_count > 50 and real_player_count > 500:
-            logger.info("Real data already seeded, skipping.")
+            logger.info("Real data already seeded, skipping full import.")
             return
 
         logger.info("Starting clean data import from JSON datasets...")
@@ -105,6 +108,7 @@ def seed_v2():
             db, team_details_json, league_idx_to_id
         )
         _import_players(db, players_json, team_details_json, team_idx_to_id)
+        # Re-run news after leagues are imported so league_id FK matches
         _seed_news(db)
         _verify(db)
 
