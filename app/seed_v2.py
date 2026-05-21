@@ -105,6 +105,7 @@ def seed_v2():
             db, team_details_json, league_idx_to_id
         )
         _import_players(db, players_json, team_details_json, team_idx_to_id)
+        _seed_news(db)
         _verify(db)
 
         db.commit()
@@ -342,6 +343,13 @@ def _import_players(db, players_json, team_details_json, team_idx_to_id):
                 team_list.append({'norm': norm, 'pid': pid, 'parts': parts})
         team_player_names[td_idx] = team_list
 
+    # Manual PID → photo URL overrides for specific players
+    PLAYER_PHOTO_OVERRIDES = {
+        # Mohamed Salah – use Wikimedia Commons image
+        'Mohamed Salah Hamed Mahrous Ghaly': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Mohamed_Salah_2018.jpg/440px-Mohamed_Salah_2018.jpg',
+        'M.SALAH': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Mohamed_Salah_2018.jpg/440px-Mohamed_Salah_2018.jpg',
+    }
+
     # Manual PID overrides for players whose names match incorrectly via fuzzy logic
     _PID_OVERRIDES = {
         'cristiano ronaldo dos santos aveiro': '1131',
@@ -534,16 +542,24 @@ def _import_players(db, players_json, team_details_json, team_idx_to_id):
                     except (ValueError, TypeError):
                         pass
 
-        # Photo URL: resolve pid from name matching, then build CDN URL
+        # Photo URL: check manual overrides first, then resolve pid, then fall back
         photo_url = None
-        pid = _find_pid(name, team_idx=team_idx)
-        if pid:
-            photo_url = f'https://cdn.soccerwiki.org/images/player/{pid}.png'
+        shirt_name = ext(p.get('\u0627\u0633\u0645 \u0642\u0645\u064a\u0635:'))
+        if name in PLAYER_PHOTO_OVERRIDES:
+            photo_url = PLAYER_PHOTO_OVERRIDES[name]
+            photo_found += 1
+        elif shirt_name and shirt_name in PLAYER_PHOTO_OVERRIDES:
+            photo_url = PLAYER_PHOTO_OVERRIDES[shirt_name]
             photo_found += 1
         else:
-            img = p.get('image', '')
-            if img and 'spacer.gif' not in img:
-                photo_url = img
+            pid = _find_pid(name, team_idx=team_idx)
+            if pid:
+                photo_url = f'https://cdn.soccerwiki.org/images/player/{pid}.png'
+                photo_found += 1
+            else:
+                img = p.get('image', '')
+                if img and 'spacer.gif' not in img:
+                    photo_url = img
 
         player_id = str(uuid.uuid4())
 
@@ -570,6 +586,179 @@ def _import_players(db, players_json, team_details_json, team_idx_to_id):
 
     db.commit()
     logger.info(f"  Imported {added} players ({skipped} skipped, {photo_found} with CDN photos)")
+
+
+def _seed_news(db):
+    """Seed football news articles if none exist."""
+    from datetime import datetime
+    existing = db.query(News).count()
+    if existing > 0:
+        logger.info(f"  News already seeded ({existing} items), skipping.")
+        return
+
+    logger.info("Seeding news articles...")
+
+    # Fetch league IDs dynamically
+    from app.models import League
+    leagues = {l.name: l.id for l in db.query(League).all()}
+
+    def get_league_id(*names):
+        for n in names:
+            for k, v in leagues.items():
+                if n.lower() in k.lower():
+                    return v
+        return None
+
+    pl_id  = get_league_id('Premier', 'England')
+    laliga = get_league_id('La Liga', 'Spain', 'Primera')
+    ucl    = get_league_id('Champions', 'UEFA')
+    seria  = get_league_id('Serie A', 'Italy')
+    bund   = get_league_id('Bundesliga', 'Germany')
+
+    news_data = [
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'محمد صلاح يُجدد عقده مع ليفربول حتى 2027',
+            'summary': 'أعلن نادي ليفربول الإنجليزي رسمياً تجديد عقد نجمه المصري محمد صلاح لمدة عامين إضافيين، ليبقى بالأنفيلد حتى عام 2027.',
+            'content': 'وقّع محمد صلاح عقداً جديداً مع نادي ليفربول الإنجليزي يمتد حتى عام 2027، وذلك في صفقة تعاقدية ضخمة تُعدّ من الأغلى في تاريخ الدوري الإنجليزي الممتاز. يأتي هذا التجديد بعد مفاوضات مطوّلة استمرت عدة أشهر، وأكد المصري "الفرعون" التزامه التام بالنادي وطموحه للفوز بألقاب جديدة مع الريدز.',
+            'language': 'ar',
+            'source': 'Liverpool FC Official',
+            'url': 'https://www.liverpoolfc.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Mohamed_Salah_2018.jpg/440px-Mohamed_Salah_2018.jpg',
+            'published_at': datetime(2025, 5, 15, 10, 0),
+            'league_id': pl_id,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'ريال مدريد يُتوّج بلقب دوري أبطال أوروبا للمرة الـ15',
+            'summary': 'حقق ريال مدريد إنجازاً تاريخياً بفوزه بلقب دوري أبطال أوروبا للمرة الخامسة عشرة في تاريخه، بعد انتصار مثير على بايرن ميونيخ.',
+            'content': 'توّج ريال مدريد الإسباني بلقب دوري أبطال أوروبا للموسم الحالي، ليضيف رقماً قياسياً جديداً إلى سجله التاريخي الحافل. جاء الفوز في نهائي مشوّق أمام بايرن ميونيخ الألماني، حيث أبدع فينيسيوس جونيور وكيليان مبابي في الهجوم، فيما صدّ تيبو كورتوا كرات خطيرة لإنقاذ الفوز.',
+            'language': 'ar',
+            'source': 'UEFA Champions League',
+            'url': 'https://www.uefa.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/5/56/Real_Madrid_CF.svg',
+            'published_at': datetime(2025, 5, 31, 22, 0),
+            'league_id': ucl,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'مبابي يسجل هاتريك في أول مواجهة بالكلاسيكو',
+            'summary': 'سجّل النجم الفرنسي كيليان مبابي ثلاثة أهداف في أولى مواجهاته بالكلاسيكو، ليقود ريال مدريد لفوز مثير على برشلونة.',
+            'content': 'كتب كيليان مبابي تاريخاً جديداً بتسجيله هاتريكاً في أولى مشاركاته في كلاسيكو الأرض، إذ قاد ريال مدريد لانتصار كبير على برشلونة بثلاثة أهداف مقابل هدف. أبدى الفرنسي أداءً استثنائياً بسرعته الخارقة وإنهائه الحاد، ليُبرهن أنه خليفة كريستيانو رونالدو في قلوب الجماهير البيضاء.',
+            'language': 'ar',
+            'source': 'Marca',
+            'url': 'https://www.marca.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/4/47/FC_Barcelona_%28crest%29.svg',
+            'published_at': datetime(2025, 4, 26, 20, 0),
+            'league_id': laliga,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'مانشستر سيتي يوقع مع نجم إنتر ميلان في صفقة الصيف',
+            'summary': 'نجح مانشستر سيتي في التعاقد مع النجم الدولي من إنتر ميلان في صفقة انتقال حرة خلال سوق الصيف.',
+            'content': 'أعلن نادي مانشستر سيتي الإنجليزي عن إتمام صفقة انتقال لاعب إنتر ميلان البارز، ليكون الإضافة الكبيرة لتعزيز الفريق في موسم جديد. جاءت الصفقة بعد مفاوضات طويلة وتنافس من كبار الأندية الأوروبية، وقال المدرب بيب غوارديولا إن الصفقة ستعزز خيارات الفريق على أعلى مستوى.',
+            'language': 'ar',
+            'source': 'Manchester City FC',
+            'url': 'https://www.mancity.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/e/eb/Manchester_City_FC_badge.svg',
+            'published_at': datetime(2025, 6, 10, 14, 0),
+            'league_id': pl_id,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'ليفربول يُسقط مانشستر يونايتد في ديربي الأحلام',
+            'summary': 'حقق ليفربول انتصاراً مدوياً على منافسه التاريخي مانشستر يونايتد في مواجهة رائعة بالأنفيلد.',
+            'content': 'أقام الأنفيلد احتفالاً كبيراً بعد فوز ليفربول الكبير على مانشستر يونايتد في لقاء كلاسيكو الدوري الإنجليزي الممتاز. برز محمد صلاح وداروين نونييز في الهجوم، فيما تألق ألسون بيكر في المرمى لإحكام قفل الشباك أمام الشياطين الحمر.',
+            'language': 'ar',
+            'source': 'Premier League',
+            'url': 'https://www.premierleague.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/0/0c/Liverpool_FC.svg',
+            'published_at': datetime(2025, 3, 5, 17, 30),
+            'league_id': pl_id,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'برشلونة يُعلن عن توقيع عقد المدرب الجديد لموسم 2025-26',
+            'summary': 'أعلن نادي برشلونة عن تعيين مدرب جديد لتولي دفة القيادة بدءاً من الموسم المقبل خلفاً للمدرب الحالي.',
+            'content': 'كشف نادي برشلونة عن هوية المدرب الجديد الذي سيقود الفريق في مغامرة موسم 2025-2026، وذلك في مؤتمر صحفي حضره رئيس النادي جوان لابورتا. تعاقد النادي مع المدرب وفق خطة تطويرية شاملة تهدف إلى استعادة المجد في أوروبا.',
+            'language': 'ar',
+            'source': 'FC Barcelona',
+            'url': 'https://www.fcbarcelona.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/4/47/FC_Barcelona_%28crest%29.svg',
+            'published_at': datetime(2025, 5, 20, 12, 0),
+            'league_id': laliga,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'بايرن ميونيخ يُتوج بلقب البوندسليغا للموسم الثاني عشر توالياً',
+            'summary': 'واصل بايرن ميونيخ هيمنته على الدوري الألماني بتتويجه بلقب البوندسليغا مجدداً، محققاً رقماً قياسياً عالمياً.',
+            'content': 'أكمل بايرن ميونيخ مسيرة مثيرة في البوندسليغا بفوزه باللقب للعام الثاني عشر على التوالي، وهو رقم يصعب تكراره في تاريخ كرة القدم العالمية. قاد المدرب فانسان كومباني الفريق في موسم متميز ظهرت فيه مواهب شابة إلى جانب نجوم الفريق المعتادين.',
+            'language': 'ar',
+            'source': 'Bundesliga Official',
+            'url': 'https://www.bundesliga.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/FC_Bayern_M%C3%BCnchen_logo_%282017%29.svg/440px-FC_Bayern_M%C3%BCnchen_logo_%282017%29.svg.png',
+            'published_at': datetime(2025, 4, 12, 18, 0),
+            'league_id': bund,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'يامال يُبهر العالم بأداء أسطوري في دوري أبطال أوروبا',
+            'summary': 'أذهل النجم الإسباني الشاب لامين يامال العالم بأداء فردي خارق في المراحل الإقصائية من دوري أبطال أوروبا.',
+            'content': 'استمر لامين يامال في رسم مساره الاستثنائي في عالم كرة القدم، بعد تقديم عرض مذهل في دوري أبطال أوروبا. رسم الشاب الإسباني ذو السبعة عشر عاماً مستقبلاً باهراً بأسلوبه اللماح وإبداعه التكتيكي، مثيراً إعجاب خبراء الكرة في أوروبا وخارجها.',
+            'language': 'ar',
+            'source': 'UEFA',
+            'url': 'https://www.uefa.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/4/47/FC_Barcelona_%28crest%29.svg',
+            'published_at': datetime(2025, 4, 8, 21, 0),
+            'league_id': ucl,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'أرسنال يقتنص صدارة الدوري الإنجليزي بعد فوز صعب',
+            'summary': 'تمكن أرسنال من اقتناص صدارة الدوري الإنجليزي الممتاز بعد فوز مثير على فريق قوي في الجولة ما قبل الأخيرة.',
+            'content': 'خطا أرسنال خطوة كبيرة نحو لقب الدوري الإنجليزي الممتاز بعد فوزه الصعب في مباراة خرجت بعدة تقلبات درامية. قاد بوكايو ساكا وليئاندرو تروساردي الهجوم بأداء متميز، فيما صمد الدفاع أمام هجمات المنافس في الدقائق الأخيرة.',
+            'language': 'ar',
+            'source': 'Arsenal FC',
+            'url': 'https://www.arsenal.com',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/en/5/53/Arsenal_FC.svg',
+            'published_at': datetime(2025, 5, 4, 16, 0),
+            'league_id': pl_id,
+        },
+        {
+            'id': str(uuid.uuid4()),
+            'title': 'يوفنتوس يُعلن عودة اللاعب الإيطالي تشيزاري بيسيريف',
+            'summary': 'أعلن نادي يوفنتوس الإيطالي عن إتمام صفقة عودة أحد أبرز نجومه السابقين في خطوة مفاجئة لجماهير السيدة العجوز.',
+            'content': 'فاجأ نادي يوفنتوس الجماهير الإيطالية والأوروبية بإعلانه عن إتمام صفقة انتقال مدوية، في محاولة جادة منه للعودة لمنافسة الأندية الكبرى في دوري أبطال أوروبا. تأتي هذه الصفقة ضمن مشروع إعادة البناء الذي يتبناه النادي التوريني.',
+            'language': 'ar',
+            'source': 'Serie A',
+            'url': 'https://www.legaseriea.it',
+            'image_url': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Juventus_FC_2017_icon_%28black%29.svg/440px-Juventus_FC_2017_icon_%28black%29.svg.png',
+            'published_at': datetime(2025, 6, 2, 11, 0),
+            'league_id': seria,
+        },
+    ]
+
+    count = 0
+    for item in news_data:
+        news = News(
+            id=item['id'],
+            title=item['title'],
+            summary=item['summary'],
+            content=item['content'],
+            language=item['language'],
+            source=item['source'],
+            url=item['url'],
+            image_url=item['image_url'],
+            published_at=item['published_at'],
+            league_id=item.get('league_id'),
+            team_id=None,
+            player_id=None,
+        )
+        db.add(news)
+        count += 1
+
+    db.commit()
+    logger.info(f"  Seeded {count} news articles.")
 
 
 def _verify(db):
