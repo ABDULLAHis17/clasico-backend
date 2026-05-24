@@ -349,9 +349,9 @@ def _import_players(db, players_json, team_details_json, team_idx_to_id):
 
     # Manual PID → photo URL overrides for specific players
     PLAYER_PHOTO_OVERRIDES = {
-        # Mohamed Salah – use Wikimedia Commons image
-        'Mohamed Salah Hamed Mahrous Ghaly': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Mohamed_Salah_2018.jpg/440px-Mohamed_Salah_2018.jpg',
-        'M.SALAH': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Mohamed_Salah_2018.jpg/440px-Mohamed_Salah_2018.jpg',
+        # Mohamed Salah – use clean Sofifa CDN image
+        'Mohamed Salah Hamed Mahrous Ghaly': 'https://cdn.sofifa.net/players/209/331/24_120.png',
+        'M.SALAH': 'https://cdn.sofifa.net/players/209/331/24_120.png',
     }
 
     # Manual PID overrides for players whose names match incorrectly via fuzzy logic

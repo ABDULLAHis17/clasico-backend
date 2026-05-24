@@ -26,20 +26,25 @@ def init_db():
         try:
             Base.metadata.create_all(bind=engine)
             from sqlalchemy import text
-            with engine.begin() as conn:
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN username VARCHAR(50) UNIQUE;"))
-                except: pass
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN phone_number VARCHAR(20);"))
-                except: pass
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_player_name VARCHAR(200);"))
-                except: pass
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_team_name VARCHAR(200);"))
-                except: pass
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_national_team_name VARCHAR(200);"))
-                except: pass
-                try: conn.execute(text("ALTER TABLE user_profiles ADD COLUMN favorite_league_name VARCHAR(200);"))
-                except: pass
-            print("✅ Database tables created successfully!")
+            
+            statements = [
+                "ALTER TABLE user_profiles ADD COLUMN username VARCHAR(50) UNIQUE;",
+                "ALTER TABLE user_profiles ADD COLUMN phone_number VARCHAR(20);",
+                "ALTER TABLE user_profiles ADD COLUMN favorite_player_name VARCHAR(200);",
+                "ALTER TABLE user_profiles ADD COLUMN favorite_team_name VARCHAR(200);",
+                "ALTER TABLE user_profiles ADD COLUMN favorite_national_team_name VARCHAR(200);",
+                "ALTER TABLE user_profiles ADD COLUMN favorite_league_name VARCHAR(200);"
+            ]
+            
+            for stmt in statements:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text(stmt))
+                except Exception as alter_err:
+                    # Column might already exist, which is perfectly fine
+                    print(f"ℹ️ Column alter status/info: {alter_err}")
+            
+            print("✅ Database tables created and updated successfully!")
             return True
         except Exception as e:
             print(f"⏳ Waiting for MySQL... ({retries} retries left). Error: {e}")
