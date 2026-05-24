@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from .. import schemas, models
+from .. import schemas, models, auth
 from ..database import get_db
 from ..dependencies import get_current_active_user
 
@@ -68,6 +68,22 @@ def update_my_profile(
     db.commit()
     db.refresh(profile)
     return {"status": "ok", "username": profile.username, "display_name": profile.display_name}
+
+
+@router.post("/me/password")
+def change_my_password(
+    data: schemas.UserPasswordChangeSchema,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_active_user),
+):
+    if not auth.verify_password(data.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password"
+        )
+    user.hashed_password = auth.get_password_hash(data.new_password)
+    db.commit()
+    return {"status": "ok", "message": "Password changed successfully"}
 
 
 @router.get("/search", response_model=list[schemas.UserSearchResultSchema])
