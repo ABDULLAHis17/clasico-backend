@@ -107,6 +107,26 @@ class ApiService {
     return false;
   }
 
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final uri = Uri.parse('$baseUrl/users/me/password');
+    try {
+      final response = await _client.post(
+        uri,
+        headers: _getHeaders(),
+        body: json.encode({
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      return response.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
   Future<List<Map<String, dynamic>>> searchUsers(String query) async {
     return _getList('/users/search', queryParams: {'q': query});
   }
