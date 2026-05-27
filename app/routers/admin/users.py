@@ -23,12 +23,6 @@ def get_users(
     db: Session = Depends(get_db),
     admin=Depends(get_moderator_user),
 ):
-    """
-    List users with optional filtering.
-    - `search`: filter by email or display_name (partial match)
-    - `status`: filter by account status (active | banned)
-    - `role`: filter by role name (user | moderator | admin)
-    """
     service = UserService(db)
     return service.list_users(search=search, status=status, role=role, skip=skip, limit=min(limit, 500))
 
@@ -41,10 +35,6 @@ def get_user(
     db: Session = Depends(get_db),
     admin=Depends(get_moderator_user),
 ):
-    """
-    Get full user details: profile, roles, and active ban if any.
-    Prevents IDOR – returns 404 for nonexistent users.
-    """
     service = UserService(db)
     result = service.get_user_full(id)
     if not result:
@@ -60,7 +50,9 @@ def get_user(
         "roles": [{"id": r.id, "name": r.name} for r in user.roles],
         "profile": {
             "display_name": user.profile.display_name if user.profile else None,
+            "username": user.profile.username if user.profile else None,
             "avatar_url": user.profile.avatar_url if user.profile else None,
+            "phone_number": user.profile.phone_number if user.profile else None,
             "country": user.profile.country if user.profile else None,
         },
         "active_ban": {
@@ -85,12 +77,6 @@ def update_user_role(
     db: Session = Depends(get_db),
     admin=Depends(get_admin_user),
 ):
-    """
-    Update a user's roles.
-    Security:
-    - Admins cannot change their own roles (self-escalation prevention).
-    - Only admins can assign the 'admin' role (privilege escalation prevention).
-    """
     service = UserService(db)
     admin_svc = AdminService(db)
 
@@ -128,21 +114,12 @@ def ban_user(
     db: Session = Depends(get_db),
     admin=Depends(get_admin_user),
 ):
-    """
-    Ban a user.
-    - `temporary`: requires `duration_days`
-    - `permanent`: no expiry
-    - `game-only`: requires `game_code`; doesn't lock the full account
-
-    Security: Admins cannot ban themselves.
-    """
     if id == admin.id:
         raise HTTPException(status_code=400, detail="You cannot ban yourself.")
 
     service = UserService(db)
     admin_svc = AdminService(db)
 
-    # Confirm user exists (IDOR protection)
     from ...repositories.admin_repo import AdminRepository
     target = AdminRepository(db).get_user_with_details(id)
     if not target:
@@ -202,3 +179,96 @@ def unban_user(
         ip_address=request.client.host,
     )
     return {"message": "User unbanned successfully", "user_id": id}
+
+
+# ─────────────────────────────────────────────────────────
+# NEW: Admin Edit User (email + username)
+# ─────────────────────────────────────────────────────────
+
+@router.patch("/{id}/edit")
+@limiter.limit("30/minute")
+def admin_edit_user(
+    request: Request,
+    id: str,
+    body: schemas.AdminUserEditSchema,
+    db: Session = Depends(get_db),
+    admin=Depends(get_admin_user),
+):
+    """Admin: update a user's email and/or username."""
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.email is not None:
+        existing = db.query(models.User).filter(
+            models.User.email == body.email,
+            models.User.id != id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = body.email
+
+    if body.username is not None:
+        profile = user.profile
+        if not profile:
+            profile = models.UserProfile(user_id=user.id)
+            db.add(profile)
+        existing_uname = db.query(models.UserProfile).filter(
+            models.UserProfile.username == body.username,
+            models.UserProfile.user_id != id
+        ).first()
+        if existing_uname:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        profile.username = body.username
+
+    db.commit()
+    db.refresh(user)
+
+    AdminService(db).log_action(
+        admin_id=admin.id,
+        action="admin_edit_user",
+        target_id=id,
+        target_type="user",
+        metadata={"email": body.email, "username": body.username},
+        ip_address=request.client.host,
+    )
+    return {
+        "status": "ok",
+        "email": user.email,
+        "username": user.profile.username if user.profile else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────
+# NEW: Admin Delete User
+# ─────────────────────────────────────────────────────────
+
+@router.delete("/{id}")
+@limiter.limit("10/minute")
+def admin_delete_user(
+    request: Request,
+    id: str,
+    db: Session = Depends(get_db),
+    admin=Depends(get_admin_user),
+):
+    """Admin: permanently delete a user and all their data."""
+    if id == admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    email_backup = user.email
+    db.delete(user)
+    db.commit()
+
+    AdminService(db).log_action(
+        admin_id=admin.id,
+        action="delete_user",
+        target_id=id,
+        target_type="user",
+        metadata={"deleted_email": email_backup},
+        ip_address=request.client.host,
+    )
+    return {"status": "ok", "message": f"User {email_backup} deleted permanently"}

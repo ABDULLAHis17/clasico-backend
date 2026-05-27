@@ -240,6 +240,12 @@ class UserProfileUpdateSchema(BaseModel):
     favorite_league: Optional[str] = None
 
 
+class AdminUserEditSchema(BaseModel):
+    """Admin-only: edit a user's email and/or username."""
+    email: Optional[str] = Field(None, description="New email address")
+    username: Optional[str] = Field(None, description="New username")
+
+
 class UserPasswordChangeSchema(BaseModel):
     current_password: str
     new_password: str = Field(..., min_length=6, max_length=100)
