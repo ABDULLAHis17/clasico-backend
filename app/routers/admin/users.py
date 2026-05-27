@@ -272,3 +272,30 @@ def admin_delete_user(
         ip_address=request.client.host,
     )
     return {"status": "ok", "message": f"User {email_backup} deleted permanently"}
+
+
+# ─────────────────────────────────────────────────────────
+# NEW: Admin Delete Fake Chat Data
+# ─────────────────────────────────────────────────────────
+
+@router.delete("/data/cleanup_chat")
+@limiter.limit("5/minute")
+def admin_cleanup_chat(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(get_admin_user),
+):
+    """Admin: delete all chat messages and conversations."""
+    db.query(models.Message).delete()
+    db.query(models.ConversationParticipant).delete()
+    db.query(models.Conversation).delete()
+    db.commit()
+
+    AdminService(db).log_action(
+        admin_id=admin.id,
+        action="cleanup_chat_data",
+        target_id="all",
+        target_type="system",
+        ip_address=request.client.host,
+    )
+    return {"status": "ok", "message": "All chat data has been cleaned up."}
