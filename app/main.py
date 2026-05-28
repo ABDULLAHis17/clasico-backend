@@ -12,7 +12,7 @@ import time
 
 from .database import engine, Base
 from . import models
-from .routers import leagues, matches, news, players, teams, admin, auth, user_feedback, stadiums, coaches, proxy, users, chat
+from .routers import leagues, matches, news, players, teams, admin, auth, user_feedback, stadiums, coaches, proxy, users, chat, friends
 from .dependencies import limiter, check_ip_ban, get_db
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
@@ -125,6 +125,7 @@ app.include_router(user_feedback.router)
 app.include_router(admin.router)
 app.include_router(users.router)
 app.include_router(chat.router)
+app.include_router(friends.router)
 
 
 # ─── Root ────────────────────────────────────────────────────
