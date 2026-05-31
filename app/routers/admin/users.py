@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Body, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -243,19 +243,19 @@ def admin_edit_user(
 # NEW: Admin Delete User
 # ─────────────────────────────────────────────────────────
 
-@router.delete("/{id}")
+@router.delete("/delete")
 @limiter.limit("10/minute")
 def admin_delete_user(
     request: Request,
-    id: str,
+    user_id: str = Query(..., description="User ID (email) to delete"),
     db: Session = Depends(get_db),
     admin=Depends(get_admin_user),
 ):
-    """Admin: permanently delete a user and all their data."""
-    if id == admin.id:
+    """Admin: permanently delete a user (uses query param to safely handle email IDs)."""
+    if user_id == admin.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account.")
 
-    user = db.query(models.User).filter(models.User.id == id).first()
+    user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -266,7 +266,7 @@ def admin_delete_user(
     AdminService(db).log_action(
         admin_id=admin.id,
         action="delete_user",
-        target_id=id,
+        target_id=user_id,
         target_type="user",
         metadata={"deleted_email": email_backup},
         ip_address=request.client.host,

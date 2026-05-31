@@ -11,10 +11,6 @@ import uuid
 router = APIRouter(prefix="/friends", tags=["Friends"])
 
 
-def _uid():
-    return str(uuid.uuid4())
-
-
 # ── My friends list ──────────────────────────────────────────────
 @router.get("/")
 @limiter.limit("60/minute")
@@ -85,27 +81,27 @@ def get_friend_requests(
     return result
 
 
-# ── Send friend request ──────────────────────────────────────────
-@router.post("/request/{target_user_id}")
+# ── Send friend request (uses query param to avoid @ in URL path) ──
+@router.post("/request")
 @limiter.limit("20/minute")
 def send_friend_request(
     request: Request,
-    target_user_id: str,
+    to: str = Query(..., description="Target user ID (email)"),
     db: Session = Depends(get_db),
     me: models.User = Depends(get_current_active_user),
 ):
-    if target_user_id == me.id:
+    if to == me.id:
         raise HTTPException(status_code=400, detail="Cannot add yourself.")
 
-    target = db.query(models.User).filter(models.User.id == target_user_id).first()
+    target = db.query(models.User).filter(models.User.id == to).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
 
     # Already friends?
     existing_friendship = db.query(models.Friend).filter(
         or_(
-            (models.Friend.user_id == me.id) & (models.Friend.friend_user_id == target_user_id),
-            (models.Friend.user_id == target_user_id) & (models.Friend.friend_user_id == me.id),
+            (models.Friend.user_id == me.id) & (models.Friend.friend_user_id == to),
+            (models.Friend.user_id == to) & (models.Friend.friend_user_id == me.id),
         )
     ).first()
     if existing_friendship:
@@ -114,7 +110,7 @@ def send_friend_request(
     # Already requested?
     existing_req = db.query(models.FriendRequest).filter(
         models.FriendRequest.from_user_id == me.id,
-        models.FriendRequest.to_user_id == target_user_id,
+        models.FriendRequest.to_user_id == to,
         models.FriendRequest.status == models.FriendRequestStatus.pending,
     ).first()
     if existing_req:
@@ -122,7 +118,7 @@ def send_friend_request(
 
     freq = models.FriendRequest(
         from_user_id=me.id,
-        to_user_id=target_user_id,
+        to_user_id=to,
         status=models.FriendRequestStatus.pending,
     )
     db.add(freq)
@@ -149,7 +145,7 @@ def accept_friend_request(
 
     freq.status = models.FriendRequestStatus.accepted
 
-    # Create friendship record (bidirectional)
+    # Create friendship record
     f1 = models.Friend(
         user_id=freq.from_user_id,
         friend_user_id=me.id,
@@ -160,7 +156,7 @@ def accept_friend_request(
     return {"status": "ok", "message": "Friend request accepted."}
 
 
-# ── Decline / cancel friend request ────────────────────────────────
+# ── Decline friend request ──────────────────────────────────────
 @router.post("/request/{request_id}/decline")
 @limiter.limit("30/minute")
 def decline_friend_request(
@@ -180,19 +176,19 @@ def decline_friend_request(
     return {"status": "ok", "message": "Request declined."}
 
 
-# ── Remove friend ────────────────────────────────────────────────
-@router.delete("/{friend_user_id}")
+# ── Remove friend (query param to avoid @ in URL path) ─────────
+@router.delete("/remove")
 @limiter.limit("20/minute")
 def remove_friend(
     request: Request,
-    friend_user_id: str,
+    friend_id: str = Query(..., description="Friend user ID (email)"),
     db: Session = Depends(get_db),
     me: models.User = Depends(get_current_active_user),
 ):
     deleted = db.query(models.Friend).filter(
         or_(
-            (models.Friend.user_id == me.id) & (models.Friend.friend_user_id == friend_user_id),
-            (models.Friend.user_id == friend_user_id) & (models.Friend.friend_user_id == me.id),
+            (models.Friend.user_id == me.id) & (models.Friend.friend_user_id == friend_id),
+            (models.Friend.user_id == friend_id) & (models.Friend.friend_user_id == me.id),
         )
     ).delete(synchronize_session=False)
     db.commit()
